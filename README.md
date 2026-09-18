@@ -14,9 +14,21 @@ respira, faz companhia e conversa com você em balõezinhos fofos. 🦕💚
 
 Precisa de um Mac com **macOS 15 (Sequoia)** ou mais novo.
 
-> Se o Mac reclamar que o app é de "desenvolvedor não identificado", é só
-> clique com o botão direito no ícone → **Abrir** → **Abrir**. Coisa do
-> Gatekeeper, não do Dino. 🙂
+> ### "O Item Dino Não Foi Aberto" — calma, o Dino não é vírus 🦖
+>
+> É o Gatekeeper resmungando porque o Dino não tem assinatura paga da Apple
+> (projeto de estimação, não multinacional). E não, ele **não apaga o app
+> sozinho**: o botão "Mover para o Lixo" é só o padrão preguiçoso do macOS —
+> clica em **OK** e o Dino continua bonitinho nos Aplicativos. 🙂
+>
+> Pra abrir, uma vez só:
+>
+> **Ajustes do Sistema → Privacidade e Segurança** → rola até aparecer
+> "O Dino foi bloqueado…" → **Abrir Mesmo Assim**. Pronto, nunca mais enche o
+> saco. 🎉
+>
+> Time terminal: `xattr -dr com.apple.quarantine "/Applications/Dino.app"`
+> resolve na hora.
 
 ## Como usar
 
