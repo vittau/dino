@@ -45,14 +45,17 @@ struct PetRootView: View {
     private var header: some View {
         HStack(spacing: 7) {
             Circle()
-                .fill(store.needsKey ? Palette.blush : Palette.skin)
+                .fill(store.needsKey ? Palette.blush
+                      : store.isOffline ? Palette.offline
+                      : Palette.skin)
                 .frame(width: 8, height: 8)
             Text("Dino")
                 .font(.system(size: 13, weight: .bold, design: .rounded))
                 .foregroundStyle(Palette.onGlass)
             Text(status)
                 .font(.system(size: 11, design: .rounded))
-                .foregroundStyle(Palette.onGlassDim)
+                .foregroundStyle(store.isOffline && !store.needsKey
+                                 ? Palette.offline : Palette.onGlassDim)
             Spacer(minLength: 4)
             iconButton("arrow.counterclockwise", help: "Nova conversa") { store.newChat() }
             iconButton(settings.alwaysOnTop ? "pin.fill" : "pin",
@@ -69,6 +72,7 @@ struct PetRootView: View {
 
     private var status: String {
         if store.needsKey { return "esperando a chave" }
+        if store.isOffline { return "offline" }
         return store.isBusy ? "pensando…" : "online"
     }
 

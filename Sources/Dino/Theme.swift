@@ -11,9 +11,15 @@ enum Palette {
     static let skin = Color(red: 122 / 255, green: 210 / 255, blue: 144 / 255)
     static let skinDeep = Color(red: 74 / 255, green: 168 / 255, blue: 116 / 255)
     static let cream = Color(red: 253 / 255, green: 237 / 255, blue: 201 / 255)
+    /// Dino's speech balloons: warm amber picked from the character art.
+    static let amber = Color(red: 251 / 255, green: 185 / 255, blue: 91 / 255)
+    /// Your own speech balloons: a deeper green, so the two voices read apart.
+    static let userBubble = Color(red: 51 / 255, green: 116 / 255, blue: 92 / 255)
     static let ink = Color(red: 51 / 255, green: 23 / 255, blue: 25 / 255)
     static let blush = Color(red: 247 / 255, green: 159 / 255, blue: 176 / 255)
     static let spike = Color(red: 247 / 255, green: 176 / 255, blue: 61 / 255)
+    /// Header dot and label when the server cannot be reached.
+    static let offline = Color(red: 235 / 255, green: 77 / 255, blue: 75 / 255)
     static let sky = Color(red: 0.85, green: 0.95, blue: 0.98)
 
     // Text and controls sitting directly on the smoked glass.
@@ -37,7 +43,7 @@ enum Metrics {
     /// (new chat + pin + settings).
     static let headerButtonsWidth: CGFloat = 92
     /// Generous grab area for the corner grip; only its corner is drawn.
-    static let resizeGripSide: CGFloat = 32
+    static let resizeGripSide: CGFloat = 26
     /// Keeps the input row clear of that grab area.
     static var resizeGripClearance: CGFloat { resizeGripSide + 6 }
     /// Below this the placeholder starts breaking mid-word, so the input row
@@ -68,7 +74,7 @@ enum Metrics {
     static func resizeGripRect(in size: CGSize) -> CGRect {
         // Bottom-right of the grab area lands just inside the card's rounded
         // corner, so the drawn strokes stay on the glass.
-        let inset = shadowPadding + 8
+        let inset = shadowPadding + 14
         return CGRect(x: size.width - inset - resizeGripSide,
                       y: inset,
                       width: resizeGripSide,
@@ -86,11 +92,11 @@ extension View {
                     if RenderMode.offscreen {
                         Color.black.opacity(0.45)
                     } else {
-                        VisualEffectBackground(material: .hudWindow)
+                        VisualEffectBackground(material: .hudWindow, dark: true)
                     }
                     LinearGradient(
-                        colors: [Color.black.opacity(0.06),
-                                 Palette.ink.opacity(0.20)],
+                        colors: [Color.black.opacity(0.10),
+                                 Palette.ink.opacity(0.32)],
                         startPoint: .top, endPoint: .bottom)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: Metrics.corner, style: .continuous))

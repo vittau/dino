@@ -118,7 +118,7 @@ struct BalloonRow: View {
         // balloons point left towards the dino and yours point right.
         .background {
             BalloonShape(tail: isUser ? .trailing : .leading)
-                .fill(isUser ? AnyShapeStyle(userFill) : AnyShapeStyle(Palette.cream))
+                .fill(isUser ? AnyShapeStyle(Palette.userBubble) : AnyShapeStyle(Palette.amber))
         }
         .overlay {
             if message.isError {
@@ -126,10 +126,5 @@ struct BalloonRow: View {
                     .stroke(Palette.blush.opacity(0.85), lineWidth: 1.5)
             }
         }
-    }
-
-    private var userFill: LinearGradient {
-        LinearGradient(colors: [Palette.skin, Palette.skinDeep],
-                       startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 }

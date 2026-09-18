@@ -14,6 +14,9 @@ RUN="${2:-}"
 APP_NAME="Dino"
 APP="build/${APP_NAME}.app"
 BUNDLE_ID="com.vitor.dino"
+# Release tooling overrides these; the defaults match a local dev build.
+APP_VERSION="${DINO_VERSION:-0.1.0}"
+APP_BUILD="${DINO_BUILD:-1}"
 
 echo "==> compiling ($CONFIG)"
 swift build -c "$CONFIG"
@@ -41,8 +44,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleExecutable</key><string>${APP_NAME}</string>
   <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>${APP_VERSION}</string>
+  <key>CFBundleVersion</key><string>${APP_BUILD}</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.entertainment</string>
@@ -53,21 +56,30 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Icon from the idle pose. iconutil needs the exact names below.
+# Icon from the idle pose, flattened onto black (the frames are transparent).
+# iconutil needs the exact names below.
 if [ -f Resources/sprites/idle_1.png ]; then
-  ICONSET="$(mktemp -d)/AppIcon.iconset"
+  ICON_DIR="$(mktemp -d)"
+  ICONSET="$ICON_DIR/AppIcon.iconset"
+  ICON_SRC="$ICON_DIR/icon.png"
   mkdir -p "$ICONSET"
+  if python3 tools/make_icon.py Resources/sprites/idle_1.png "$ICON_SRC"; then
+    :
+  else
+    echo "    (icon flatten failed, using the raw sprite)"
+    ICON_SRC="Resources/sprites/idle_1.png"
+  fi
   for spec in "16:16x16" "32:16x16@2x" "32:32x32" "64:32x32@2x" \
               "128:128x128" "256:128x128@2x" "256:256x256" "512:256x256@2x" \
               "512:512x512" "1024:512x512@2x"; do
     px="${spec%%:*}"; name="${spec##*:}"
-    sips -z "$px" "$px" Resources/sprites/idle_1.png \
+    sips -z "$px" "$px" "$ICON_SRC" \
          --out "$ICONSET/icon_${name}.png" >/dev/null 2>&1
   done
   if iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns" 2>/dev/null; then
     echo "    built AppIcon.icns"
   fi
-  rm -rf "$(dirname "$ICONSET")"
+  rm -rf "$ICON_DIR"
 fi
 
 # Ad-hoc signature: enough for the file-access and network permissions the

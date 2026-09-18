@@ -23,6 +23,9 @@ final class ChatStore {
     var draft = ""
     var keyDraft = ""
     var isBusy = false
+    /// True after a request could not reach the server (timeout or no network).
+    /// Drives the red "offline" pill in the header until the next success.
+    var isOffline = false
     var isValidatingKey = false
     /// Set when the server rejects the key, so we ask again without forgetting
     /// whatever the user already typed.
@@ -82,12 +85,19 @@ final class ChatStore {
     private static let keySaved =
         "Uhuu! Guardei sua chave 🎉 Agora pode me perguntar qualquer coisa~ 🦖💚"
 
+    private static let offlineMessage = """
+    Ops! 🥺 Parece que meu cérebro digital deu uma tropeçada e eu não consegui falar com o servidor.
+
+    Tenta de novo daqui a pouquinho? Prometo que não foi o meteoro. 🦖☄️
+    """
+
     // MARK: - onboarding
 
     func submitKey() {
         let candidate = keyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !candidate.isEmpty, !isValidatingKey else { return }
         isValidatingKey = true
+        isOffline = false
         let sid = sessionID
 
         Task {
@@ -101,16 +111,23 @@ final class ChatStore {
                 }
                 keyDraft = ""
                 authFailed = false
+                isOffline = false
                 isValidatingKey = false
                 messages.append(Message(author: .dino, text: Self.keySaved))
                 persist()
             } catch {
                 isValidatingKey = false
-                authFailed = true
-                messages.append(Message(
-                    author: .dino,
-                    text: "Hmm, essa chave não funcionou 😢 \(Self.describe(error)) Tenta de novo~ 🔑",
-                    isError: true))
+                if Self.isServerUnavailable(error) {
+                    isOffline = true
+                    messages.append(Message(
+                        author: .dino, text: Self.offlineMessage, isError: true))
+                } else {
+                    authFailed = true
+                    messages.append(Message(
+                        author: .dino,
+                        text: "Hmm, essa chave não funcionou 😢 \(Self.describe(error)) Tenta de novo~ 🔑",
+                        isError: true))
+                }
             }
         }
     }
@@ -126,6 +143,7 @@ final class ChatStore {
         let replyAt = messages.count
         messages.append(Message(author: .dino, text: "", isStreaming: true))
         isBusy = true
+        isOffline = false
         persistSoon()
 
         let turns = conversation()
@@ -152,6 +170,7 @@ final class ChatStore {
                 if !got {
                     append("rawr? acho que me perdi aqui 🦖", at: replyAt)
                 }
+                isOffline = false
                 if replyAt < messages.count {
                     messages[replyAt].isStreaming = false
                 }
@@ -200,7 +219,6 @@ final class ChatStore {
     }
 
     private func fail(_ error: Error, at index: Int) {
-        let described = Self.describe(error)
         if Self.isAuthFailure(error) {
             authFailed = true
             if index < messages.count {
@@ -211,9 +229,35 @@ final class ChatStore {
             }
             return
         }
+        if Self.isServerUnavailable(error) {
+            isOffline = true
+            if index < messages.count {
+                messages[index] = Message(
+                    author: .dino, text: Self.offlineMessage, isError: true)
+            }
+            return
+        }
         if index < messages.count {
             messages[index] = Message(
-                author: .dino, text: "Ops, deu ruim aqui 😖 \(described)", isError: true)
+                author: .dino, text: "Ops, deu ruim aqui 😖 \(Self.describe(error))",
+                isError: true)
+        }
+    }
+
+    /// Timeout, no route to the server, or a server-side 5xx - the cases the
+    /// header reports as "offline" rather than as a chat error.
+    private static func isServerUnavailable(_ error: Error) -> Bool {
+        if let api = error as? OpenCodeGo.APIError, let status = api.status, status >= 500 {
+            return true
+        }
+        guard let url = error as? URLError else { return false }
+        switch url.code {
+        case .timedOut, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed,
+             .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed,
+             .secureConnectionFailed:
+            return true
+        default:
+            return false
         }
     }
 

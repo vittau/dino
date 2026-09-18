@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and release (e.g. v0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build the app
+        env:
+          DINO_VERSION: ${{ steps.ver.outputs.version }}
+          DINO_BUILD: ${{ github.run_number }}
+        run: ./build-app.sh release
+
+      - name: Package the DMG
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          set -euo pipefail
+          STAGE="$(mktemp -d)"
+          cp -R build/Dino.app "$STAGE/Dino.app"
+          ln -s /Applications "$STAGE/Applications"
+          hdiutil create -volname "Dino" -srcfolder "$STAGE" \
+            -ov -format UDZO "build/Dino-${TAG}.dmg"
+          rm -rf "$STAGE"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ${{ steps.ver.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          files: build/Dino-${{ steps.ver.outputs.tag }}.dmg
+          generate_release_notes: true
+          fail_on_unmatched_files: true

@@ -79,7 +79,7 @@ final class WindowResizeGrip: NSView {
     override var mouseDownCanMoveWindow: Bool { false }
 
     /// Perpendicular distance between the grip strokes.
-    private let step: CGFloat = 4.5
+    private let step: CGFloat = 2.5
 
     override func mouseDown(with event: NSEvent) {
         Debug.log("resize grip mouseDown")
@@ -117,12 +117,13 @@ final class WindowResizeGrip: NSView {
     override func draw(_ dirtyRect: NSRect) {
         NSColor.white.withAlphaComponent(0.6).setStroke()
         let path = NSBezierPath()
-        path.lineWidth = 1.8
+        path.lineWidth = 1.5
         path.lineCapStyle = .round
-        for index in 0..<4 {
-            let offset = CGFloat(index) * step
-            path.move(to: NSPoint(x: bounds.maxX - offset, y: bounds.minY + 2))
-            path.line(to: NSPoint(x: bounds.maxX - 2, y: bounds.minY + offset))
+        let inset: CGFloat = 3
+        for index in 0..<3 {
+            let reach = CGFloat(index + 1) * step
+            path.move(to: NSPoint(x: bounds.maxX - inset, y: bounds.minY + inset + reach))
+            path.line(to: NSPoint(x: bounds.maxX - inset - reach, y: bounds.minY + inset))
         }
         path.stroke()
     }

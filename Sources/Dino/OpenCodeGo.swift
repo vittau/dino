@@ -12,6 +12,14 @@ enum OpenCodeGo {
 
     struct APIError: LocalizedError {
         let message: String
+        /// HTTP status when the failure came from the server, nil otherwise.
+        let status: Int?
+
+        init(message: String, status: Int? = nil) {
+            self.message = message
+            self.status = status
+        }
+
         var errorDescription: String? { message }
     }
 
@@ -27,7 +35,9 @@ enum OpenCodeGo {
     private static let session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.httpAdditionalHeaders = ["User-Agent": userAgent]
-        config.timeoutIntervalForRequest = 180
+        // If the server does not answer within 10s the widget goes "offline"
+        // instead of leaving the user staring at a spinner.
+        config.timeoutIntervalForRequest = 10
         return URLSession(configuration: config)
     }()
 
@@ -70,7 +80,7 @@ enum OpenCodeGo {
         let req = try request(path: "models", apiKey: apiKey, sessionID: sessionID, body: nil)
         let (data, response) = try await session.data(for: req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 else { throw APIError(message: message(from: data, status: status)) }
+        guard status == 200 else { throw APIError(message: message(from: data, status: status), status: status) }
 
         if let envelope = try? JSONDecoder().decode(ModelEnvelope.self, from: data) {
             return envelope.data.map(\.id).sorted()
@@ -101,7 +111,7 @@ enum OpenCodeGo {
                     guard status == 200 else {
                         var data = Data()
                         for try await byte in bytes { data.append(byte) }
-                        throw APIError(message: message(from: data, status: status))
+                        throw APIError(message: message(from: data, status: status), status: status)
                     }
                     for try await line in bytes.lines {
                         guard line.hasPrefix("data:") else { continue }
@@ -137,7 +147,7 @@ enum OpenCodeGo {
             ])
         let (data, response) = try await session.data(for: req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 else { throw APIError(message: message(from: data, status: status)) }
+        guard status == 200 else { throw APIError(message: message(from: data, status: status), status: status) }
         guard let reply = try? JSONDecoder().decode(Completion.self, from: data),
               let text = reply.choices.first?.message.content
         else { throw APIError(message: "Resposta vazia do servidor.") }
