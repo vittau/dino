@@ -1,0 +1,9 @@
+# build output
+.build/
+build/
+
+# python scratch
+__pycache__/
+
+# macOS
+.DS_Store
