@@ -3,6 +3,8 @@
 Um dinossaurinho de pixel art que mora no cantinho do seu Mac. Ele pisca,
 respira, faz companhia e conversa com você em balõezinhos fofos. 🦕💚
 
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/vittau)
+
 ![O Dino conversando](docs/print.png)
 
 ## Como instalar
@@ -44,6 +46,13 @@ Cola lá, ele guarda com carinho e nunca mais esquece. 🔑
 ## Deu ruim?
 
 Abra uma [issue](https://github.com/vittau/dino/issues) que a gente resolve. 🦖
+
+## Apoie o Dino 🥬
+
+O Dino adora folhinhas — é o que mantém o meteoro longe. Se ele faz companhia
+pro seu Mac, dá pra deixar uma pra ele aqui:
+
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/vittau)
 
 ---
 
