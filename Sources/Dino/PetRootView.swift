@@ -228,11 +228,17 @@ struct PetRootView: View {
 
     private var promptField: some View {
         HStack(spacing: 7) {
-            TextField("Fala comigo~", text: $store.draft, axis: .vertical)
+            TextField("Fala comigo~", text: $store.draft)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12.5, design: .rounded))
                 .foregroundStyle(Palette.ink)
-                .lineLimit(1...4)
+                .lineLimit(1)
+                // The field must not size itself from its content, or a long
+                // message would push the row wider and make ViewThatFits drop
+                // the dino above the input. Pinning the ideal width keeps the
+                // row's fit decision independent of what is typed.
+                .frame(minWidth: 0, idealWidth: Metrics.minInputWidth,
+                       maxWidth: .infinity, alignment: .leading)
                 .focused($inputFocused)
                 .onSubmit { store.send() }
             Button { store.send() } label: {
