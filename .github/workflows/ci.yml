@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the app
+        run: ./build-app.sh release
+
+      # Sprite tools are dependency-free plain Python; compile them to catch
+      # syntax errors. No --selftest here: it needs an API key and spends credits.
+      - name: Check the sprite tools
+        run: python3 -m py_compile tools/*.py
