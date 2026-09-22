@@ -174,6 +174,10 @@ final class ChatStore {
                     got = true
                     append(reply, id: replyID)
                 }
+                // Cancelling the task ends the stream by returning nil instead
+                // of throwing, so bail here: a cancelled reply must not write
+                // a fallback line or touch shared state (stopReply tidied up).
+                guard !Task.isCancelled else { return }
                 if !got {
                     append("rawr? acho que me perdi aqui 🦖", id: replyID)
                 }
@@ -182,11 +186,16 @@ final class ChatStore {
             } catch {
                 // A cancelled reply is the user's doing, not a failure: keep
                 // the text that already streamed and never report it as an
-                // error or as "offline". A reply from a replaced conversation
-                // must not write anything either.
-                guard !Self.isCancellation(error), sid == sessionID else { return }
+                // error or as "offline".
+                guard !Self.isCancellation(error) else { return }
+                // Only the current reply may report: a superseded one must not
+                // write into the conversation that replaced it.
+                guard self.replyID == replyID else { return }
                 fail(error, id: replyID)
             }
+            // Only the task that still owns the current reply may reset shared
+            // state; a stopped or superseded reply must not clobber the next.
+            guard self.replyID == replyID else { return }
             replyTask = nil
             self.replyID = nil
             isBusy = false
