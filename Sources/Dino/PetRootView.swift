@@ -213,6 +213,7 @@ struct PetRootView: View {
             .padding(.horizontal, 13)
             .padding(.vertical, 10)
             .background(capsule)
+            .modifier(FocusOnTap(focus: $inputFocused))
 
             Text("Fica salvo em \(secretsPath) (só você lê)")
                 .font(.system(size: 9.5, design: .rounded))
@@ -264,6 +265,7 @@ struct PetRootView: View {
         .padding(.horizontal, 13)
         .padding(.vertical, 8)
         .background(capsule)
+        .modifier(FocusOnTap(focus: $inputFocused))
     }
 
     private var capsule: some View {
@@ -273,5 +275,18 @@ struct PetRootView: View {
                 Capsule(style: .continuous)
                     .strokeBorder(Palette.skinDeep.opacity(0.22), lineWidth: 1)
             }
+    }
+}
+
+/// Makes the whole input capsule a click target for its field. On its own the
+/// field only takes clicks on its one line of text; the padding around it was
+/// dead. The buttons inside keep their own taps, which win over this one.
+private struct FocusOnTap: ViewModifier {
+    var focus: FocusState<Bool>.Binding
+
+    func body(content: Content) -> some View {
+        content
+            .contentShape(Capsule(style: .continuous))
+            .onTapGesture { focus.wrappedValue = true }
     }
 }
