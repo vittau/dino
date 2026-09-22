@@ -35,7 +35,7 @@ enum SelfTest {
 
                 let oneShot = try await OpenCodeGo.complete(
                     model: model, turns: turns, apiKey: key,
-                    sessionID: OpenCodeGo.newSessionID())
+                    sessionID: OpenCodeGo.newSessionID(), maxTokens: 200)
                 print("selftest: one-shot -> \(oneShot)")
 
                 if streamed.isEmpty {
