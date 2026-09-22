@@ -261,11 +261,13 @@ final class ChatStore {
         }
     }
 
+    /// The endpoint rejects a bad key with 401/403; trust the status because the
+    /// message can mention "api key" on unrelated 4xx/5xx failures.
     private static func isAuthFailure(_ error: Error) -> Bool {
-        let text = "\(error.localizedDescription)".lowercased()
-        return text.contains("401") || text.contains("403")
-            || text.contains("unauthor") || text.contains("invalid api key")
-            || text.contains("api key") && text.contains("invalid")
+        if let api = error as? OpenCodeGo.APIError, let status = api.status {
+            return status == 401 || status == 403
+        }
+        return false
     }
 
     private static func describe(_ error: Error) -> String {
