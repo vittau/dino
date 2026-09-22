@@ -32,20 +32,34 @@ enum OpenCodeGo {
         "ses_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
     }
 
+    /// Idle timeout for the quick calls (`availableModels`): if the server does
+    /// not answer within 10s the widget goes "offline" instead of leaving the
+    /// user staring at a spinner.
+    private static let quickTimeout: TimeInterval = 10
+    /// Idle timeout for chat completions. A non-streaming reply (or one from a
+    /// reasoning model that thinks before its first token) receives nothing
+    /// until it is done, so the 10s idle timeout would cut it off; a long
+    /// generation gets plenty of room here.
+    private static let chatTimeout: TimeInterval = 120
+
     private static let session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.httpAdditionalHeaders = ["User-Agent": userAgent]
-        // If the server does not answer within 10s the widget goes "offline"
-        // instead of leaving the user staring at a spinner.
-        config.timeoutIntervalForRequest = 10
+        // Fallback for requests that do not set their own timeout: quick calls
+        // fail fast (key validation, connection failures), so the widget goes
+        // "offline" promptly when the server is unreachable. Chat completions
+        // override this with `chatTimeout` so long generations are not cut off.
+        config.timeoutIntervalForRequest = quickTimeout
         return URLSession(configuration: config)
     }()
 
     // MARK: - request building
 
     private static func request(path: String, apiKey: String, sessionID: String,
-                                body: [String: Any]?) throws -> URLRequest {
+                                body: [String: Any]?,
+                                timeout: TimeInterval) throws -> URLRequest {
         var req = URLRequest(url: base.appendingPathComponent(path))
+        req.timeoutInterval = timeout
         req.httpMethod = body == nil ? "GET" : "POST"
         req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
@@ -77,7 +91,8 @@ enum OpenCodeGo {
     /// The /models payload shape has changed before, so accept both the
     /// OpenAI-style envelope and a bare array of objects.
     static func availableModels(apiKey: String, sessionID: String) async throws -> [String] {
-        let req = try request(path: "models", apiKey: apiKey, sessionID: sessionID, body: nil)
+        let req = try request(path: "models", apiKey: apiKey, sessionID: sessionID,
+                              body: nil, timeout: quickTimeout)
         let (data, response) = try await session.data(for: req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard status == 200 else { throw APIError(message: message(from: data, status: status), status: status) }
@@ -105,7 +120,8 @@ enum OpenCodeGo {
                             "model": model,
                             "messages": turns.map { ["role": $0.role, "content": $0.content] },
                             "stream": true,
-                        ])
+                        ],
+                        timeout: chatTimeout)
                     let (bytes, response) = try await session.bytes(for: req)
                     let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                     guard status == 200 else {
@@ -144,7 +160,8 @@ enum OpenCodeGo {
                 "messages": turns.map { ["role": $0.role, "content": $0.content] },
                 "stream": false,
                 "max_tokens": 200,
-            ])
+            ],
+            timeout: chatTimeout)
         let (data, response) = try await session.data(for: req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard status == 200 else { throw APIError(message: message(from: data, status: status), status: status) }
