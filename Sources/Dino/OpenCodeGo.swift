@@ -150,17 +150,20 @@ enum OpenCodeGo {
         }
     }
 
-    /// One-shot variant, used to check a pasted key without burning a stream.
+    /// One-shot variant, used by non-streaming chat replies (no cap, so the
+    /// server default applies) and by `--selftest`, which passes a small
+    /// `maxTokens` to keep the check cheap.
     static func complete(model: String, turns: [Turn], apiKey: String,
-                         sessionID: String) async throws -> String {
+                         sessionID: String, maxTokens: Int? = nil) async throws -> String {
+        var body: [String: Any] = [
+            "model": model,
+            "messages": turns.map { ["role": $0.role, "content": $0.content] },
+            "stream": false,
+        ]
+        if let maxTokens { body["max_tokens"] = maxTokens }
         let req = try request(
             path: "chat/completions", apiKey: apiKey, sessionID: sessionID,
-            body: [
-                "model": model,
-                "messages": turns.map { ["role": $0.role, "content": $0.content] },
-                "stream": false,
-                "max_tokens": 200,
-            ],
+            body: body,
             timeout: chatTimeout)
         let (data, response) = try await session.data(for: req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
