@@ -32,6 +32,11 @@ final class ChatStore {
     var authFailed = false
     var sessionID = OpenCodeGo.newSessionID()
     private var persistTask: Task<Void, Never>?
+    /// The in-flight reply, kept so a new chat or the stop button can cancel it
+    /// instead of letting it keep streaming into whatever comes next.
+    private var replyTask: Task<Void, Never>?
+    /// Identity of the placeholder bubble the in-flight reply streams into.
+    private var replyID: UUID?
 
     /// True while the dino still needs a key: first run, or a rejected one.
     /// This is what turns the input row into a key field.
@@ -140,8 +145,10 @@ final class ChatStore {
         draft = ""
         messages.append(Message(author: .user, text: text))
 
-        let replyAt = messages.count
-        messages.append(Message(author: .dino, text: "", isStreaming: true))
+        let placeholder = Message(author: .dino, text: "", isStreaming: true)
+        messages.append(placeholder)
+        let replyID = placeholder.id
+        self.replyID = replyID
         isBusy = true
         isOffline = false
         persistSoon()
@@ -152,37 +159,63 @@ final class ChatStore {
         let sid = sessionID
         let streaming = settings.streaming
 
-        Task {
+        replyTask = Task {
             do {
                 var got = false
                 if streaming {
                     for try await delta in OpenCodeGo.stream(
                         model: model, turns: turns, apiKey: apiKey, sessionID: sid) {
                         got = true
-                        append(delta, at: replyAt)
+                        append(delta, id: replyID)
                     }
                 } else {
                     let reply = try await OpenCodeGo.complete(
                         model: model, turns: turns, apiKey: apiKey, sessionID: sid)
                     got = true
-                    append(reply, at: replyAt)
+                    append(reply, id: replyID)
                 }
                 if !got {
-                    append("rawr? acho que me perdi aqui 🦖", at: replyAt)
+                    append("rawr? acho que me perdi aqui 🦖", id: replyID)
                 }
                 isOffline = false
-                if replyAt < messages.count {
-                    messages[replyAt].isStreaming = false
-                }
+                finishReply(id: replyID)
             } catch {
-                fail(error, at: replyAt)
+                // A cancelled reply is the user's doing, not a failure: keep
+                // the text that already streamed and never report it as an
+                // error or as "offline". A reply from a replaced conversation
+                // must not write anything either.
+                guard !Self.isCancellation(error), sid == sessionID else { return }
+                fail(error, id: replyID)
             }
+            replyTask = nil
+            self.replyID = nil
             isBusy = false
             persist()
         }
     }
 
+    /// Cancels the in-flight reply and tidies its bubble. Text that already
+    /// streamed stays; an empty placeholder is dropped rather than left blank.
+    private func cancelReply() {
+        replyTask?.cancel()
+        replyTask = nil
+        if let id = replyID {
+            replyID = nil
+            finishReply(id: id)
+        }
+        isBusy = false
+    }
+
+    /// Stops a long reply without wiping what the dino already said.
+    func stopReply() {
+        guard replyTask != nil else { return }
+        cancelReply()
+        persist()
+    }
+
     func newChat() {
+        // The old reply must not keep streaming or persist over the new chat.
+        cancelReply()
         sessionID = OpenCodeGo.newSessionID()
         authFailed = false
         messages = [Message(
@@ -192,6 +225,7 @@ final class ChatStore {
     }
 
     func clearChat() {
+        cancelReply()
         messages = []
         ChatHistory.clear()
     }
@@ -213,35 +247,47 @@ final class ChatStore {
         return turns
     }
 
-    private func append(_ delta: String, at index: Int) {
-        guard index < messages.count else { return }
+    private func append(_ delta: String, id: UUID) {
+        guard let index = messages.firstIndex(where: { $0.id == id }) else { return }
         messages[index].text += delta
     }
 
-    private func fail(_ error: Error, at index: Int) {
+    /// Marks a reply done, dropping the bubble if it never got any text.
+    private func finishReply(id: UUID) {
+        guard let index = messages.firstIndex(where: { $0.id == id }) else { return }
+        messages[index].isStreaming = false
+        if messages[index].text.isEmpty {
+            messages.remove(at: index)
+        }
+    }
+
+    private func fail(_ error: Error, id: UUID) {
+        guard let index = messages.firstIndex(where: { $0.id == id }) else { return }
         if Self.isAuthFailure(error) {
             authFailed = true
-            if index < messages.count {
-                messages[index] = Message(
-                    author: .dino,
-                    text: "Acho que sua API key expirou ou tá errada 😢 Cola de novo aqui embaixo~ 🔑",
-                    isError: true)
-            }
+            messages[index] = Message(
+                author: .dino,
+                text: "Acho que sua API key expirou ou tá errada 😢 Cola de novo aqui embaixo~ 🔑",
+                isError: true)
             return
         }
         if Self.isServerUnavailable(error) {
             isOffline = true
-            if index < messages.count {
-                messages[index] = Message(
-                    author: .dino, text: Self.offlineMessage, isError: true)
-            }
+            messages[index] = Message(
+                author: .dino, text: Self.offlineMessage, isError: true)
             return
         }
-        if index < messages.count {
-            messages[index] = Message(
-                author: .dino, text: "Ops, deu ruim aqui 😖 \(Self.describe(error))",
-                isError: true)
-        }
+        messages[index] = Message(
+            author: .dino, text: "Ops, deu ruim aqui 😖 \(Self.describe(error))",
+            isError: true)
+    }
+
+    /// Cancel is a user action, not a failure: Swift surfaces it as a
+    /// `CancellationError`, as `URLError.cancelled`, or just as a cancelled task.
+    private static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let url = error as? URLError, url.code == .cancelled { return true }
+        return Task.isCancelled
     }
 
     /// Timeout, no route to the server, or a server-side 5xx - the cases the

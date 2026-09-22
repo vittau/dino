@@ -241,19 +241,24 @@ struct PetRootView: View {
                        maxWidth: .infinity, alignment: .leading)
                 .focused($inputFocused)
                 .onSubmit { store.send() }
-            Button { store.send() } label: {
-                Image(systemName: store.isBusy ? "ellipsis" : "arrow.up")
+            Button {
+                if store.isBusy { store.stopReply() } else { store.send() }
+            } label: {
+                Image(systemName: store.isBusy ? "stop.fill" : "arrow.up")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: 26, height: 26)
                     .background(Circle().fill(
-                        store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            ? AnyShapeStyle(Palette.skin.opacity(0.45))
-                            : AnyShapeStyle(Palette.skinDeep)))
+                        store.isBusy
+                            ? AnyShapeStyle(Palette.skinDeep)
+                            : store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                ? AnyShapeStyle(Palette.skin.opacity(0.45))
+                                : AnyShapeStyle(Palette.skinDeep)))
             }
             .buttonStyle(.plain)
-            .disabled(store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                      || store.isBusy)
+            .help(store.isBusy ? "Parar" : "Enviar")
+            .disabled(!store.isBusy && store.draft.trimmingCharacters(
+                in: .whitespacesAndNewlines).isEmpty)
         }
         .frame(minWidth: Metrics.minInputWidth)
         .padding(.horizontal, 13)
