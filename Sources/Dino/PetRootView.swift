@@ -192,7 +192,7 @@ struct PetRootView: View {
                 Image(systemName: "key.fill")
                     .font(.system(size: 11))
                     .foregroundStyle(Palette.skinDeep)
-                SecureField("Cola sua API key do OpenCode Go", text: $store.keyDraft)
+                SecureField("Cola sua API key do OpenRouter", text: $store.keyDraft)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12.5, design: .rounded))
                     .foregroundStyle(Palette.ink)

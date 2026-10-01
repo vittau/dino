@@ -18,10 +18,12 @@ enum Main {
             SelfTest.runAndExit()
         }
         if args.contains("--prompt") {
-            // Prints exactly what is sent as the system prompt, so a long
-            // prompt can be checked without reading Swift source.
-            print(Personality.default)
-            exit(0)
+            // The prompt includes live network facts, just like a chat request.
+            Task {
+                print(await LiveContext.shared.prompt())
+                exit(0)
+            }
+            RunLoop.main.run()
         }
         if let index = args.firstIndex(of: "--render"), index + 1 < args.count {
             RenderHarness.runAndExit(into: args[index + 1])

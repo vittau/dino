@@ -40,8 +40,28 @@ Precisa de um Mac com **macOS 15 (Sequoia)** ou mais novo.
 - Quer ele sempre por cima? Clique na tachinha 📌.
 - Pra começar uma conversa nova, clique na setinha circular 🔄.
 
-Na primeira vez o Dino pede a sua **chave do OpenCode Go** pra poder pensar.
+Na primeira vez o Dino pede a sua **chave do OpenRouter** pra poder pensar.
 Cola lá, ele guarda com carinho e nunca mais esquece. 🔑
+Você pode criar a chave em [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys).
+O modelo inicial é `openrouter/free`; outros modelos podem ter custo no OpenRouter.
+
+### Hora, localização e clima
+
+Ao responder, o Dino recebe a data e hora do Mac com o fuso horário, uma
+localização aproximada e o clima atual com previsão para hoje e os próximos
+dois dias. Na primeira conversa, o macOS pede permissão para localizar o Mac.
+Se você negar ou o Mac não conseguir obter a localização, o Dino usa a
+estimativa por IP do [ipwho.is](https://ipwhois.io/documentation). Essa estimativa
+pode apontar para outra cidade quando você usa VPN, iCloud Private Relay ou
+certas redes. Se ambas as consultas falharem, o Dino informa que os dados
+estão indisponíveis.
+
+Os dados de clima são fornecidos pela [Open-Meteo](https://open-meteo.com/)
+(dados licenciados sob [CC BY 4.0](https://open-meteo.com/en/terms)). As consultas
+usam HTTPS, dispensam chave própria e são guardadas temporariamente para evitar
+requisições a cada mensagem. O acesso gratuito da Open-Meteo é para uso não
+comercial, limitado a 10 mil chamadas por dia e sem garantia de disponibilidade;
+o ipwho.is permite 1 mil chamadas diárias por IP na modalidade gratuita.
 
 ## Deu ruim?
 

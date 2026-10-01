@@ -5,7 +5,8 @@ import Foundation
 /// new identity on every rebuild, so the keychain prompt would fire each time.
 /// 0600 in Application Support keeps it out of other accounts' reach.
 enum Secrets {
-    private static let key = "opencodeGoAPIKey"
+    private static let key = "openRouterAPIKey"
+    private static let previousKey = "opencodeGoAPIKey"
 
     private static let fileURL = SupportDirectory.file("secrets.json")
 
@@ -28,6 +29,7 @@ enum Secrets {
         get { load()[key] ?? "" }
         set {
             var values = load()
+            values.removeValue(forKey: previousKey)
             let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty {
                 values.removeValue(forKey: key)

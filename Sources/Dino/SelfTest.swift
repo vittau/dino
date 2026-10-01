@@ -1,6 +1,6 @@
 import Foundation
 
-/// `Dino --selftest` exercises the OpenCode Go client without opening the
+/// `Dino --selftest` exercises the OpenRouter client without opening the
 /// window: list models, then stream a reply and fetch a one-shot reply. Handy
 /// for checking a key or the SSE parsing without poking at the UI.
 enum SelfTest {
@@ -15,27 +15,25 @@ enum SelfTest {
 
         Task.detached {
             do {
-                let session = OpenCodeGo.newSessionID()
-                let models = try await OpenCodeGo.availableModels(apiKey: key, sessionID: session)
+                try await OpenRouter.validateKey(apiKey: key)
+                let models = try await OpenRouter.availableModels(apiKey: key)
                 print("selftest: \(models.count) modelos disponíveis")
                 print("selftest: primeiros -> \(models.prefix(6).joined(separator: ", "))")
 
                 let turns = [
-                    OpenCodeGo.Turn(role: "system", content: Personality.default),
-                    OpenCodeGo.Turn(role: "user", content: "diz oi em poucas palavras"),
+                    OpenRouter.Turn(role: "system", content: await LiveContext.shared.prompt()),
+                    OpenRouter.Turn(role: "user", content: "diz oi em poucas palavras"),
                 ]
 
                 var streamed = ""
-                for try await delta in OpenCodeGo.stream(
-                    model: model, turns: turns, apiKey: key,
-                    sessionID: OpenCodeGo.newSessionID()) {
+                for try await delta in OpenRouter.stream(
+                    model: model, turns: turns, apiKey: key) {
                     streamed += delta
                 }
                 print("selftest: stream -> \(streamed)")
 
-                let oneShot = try await OpenCodeGo.complete(
-                    model: model, turns: turns, apiKey: key,
-                    sessionID: OpenCodeGo.newSessionID(), maxTokens: 200)
+                let oneShot = try await OpenRouter.complete(
+                    model: model, turns: turns, apiKey: key, maxTokens: 200)
                 print("selftest: one-shot -> \(oneShot)")
 
                 if streamed.isEmpty {

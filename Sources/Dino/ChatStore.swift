@@ -30,7 +30,7 @@ final class ChatStore {
     /// Set when the server rejects the key, so we ask again without forgetting
     /// whatever the user already typed.
     var authFailed = false
-    var sessionID = OpenCodeGo.newSessionID()
+    var sessionID = OpenRouter.newSessionID()
     private var persistTask: Task<Void, Never>?
     /// The in-flight reply, kept so a new chat or the stop button can cancel it
     /// instead of letting it keep streaming into whatever comes next.
@@ -47,7 +47,8 @@ final class ChatStore {
             sessionID = stored.sessionID
             messages = stored.messages.map {
                 Message(author: $0.author == "user" ? .user : .dino,
-                        text: $0.text,
+                        text: !settings.hasAPIKey && $0.author == "dino"
+                            && $0.text == Self.previousKeyRequest ? Self.keyRequest : $0.text,
                         isError: $0.isError)
             }
         }
@@ -84,8 +85,17 @@ final class ChatStore {
     private static let greeting =
         "Oi! Eu sou o Dino 🦕✨ Tô aqui no seu cantinho, prontinho pra conversar. Manda o que quiser~ 💚"
 
-    private static let keyRequest =
-        "Oi! Eu sou o Dino 🦕✨ Pra gente conversar, eu preciso da sua API key do OpenCode Go. Cola ela aqui embaixo que eu guardo pra você~ 🔑"
+    private static let keyRequest = """
+    Oi! Eu sou o Dino 🦕✨ Pra gente conversar, preciso de uma API key do OpenRouter.
+
+    Acesse https://openrouter.ai/settings/keys, entre ou crie uma conta e gere uma chave.
+
+    Depois cola ela aqui embaixo que eu guardo pra você~ 🔑
+    """
+
+    /// Upgrade the generated onboarding bubble already saved in history.
+    private static let previousKeyRequest =
+        "Oi! Eu sou o Dino 🦕✨ Pra gente conversar, preciso de uma API key do OpenRouter. Acesse https://openrouter.ai/settings/keys, entre ou crie uma conta e gere uma chave. Depois cola ela aqui embaixo que eu guardo pra você~ 🔑"
 
     private static let keySaved =
         "Uhuu! Guardei sua chave 🎉 Agora pode me perguntar qualquer coisa~ 🦖💚"
@@ -103,17 +113,12 @@ final class ChatStore {
         guard !candidate.isEmpty, !isValidatingKey else { return }
         isValidatingKey = true
         isOffline = false
-        let sid = sessionID
-
         Task {
             do {
-                let models = try await OpenCodeGo.availableModels(apiKey: candidate, sessionID: sid)
+                try await OpenRouter.validateKey(apiKey: candidate)
                 // Saving through AppSettings is the same write the Settings
                 // window does, so the key behaves identically either way.
                 settings.apiKey = candidate
-                if !models.isEmpty, !models.contains(settings.model) {
-                    settings.model = models[0]
-                }
                 keyDraft = ""
                 authFailed = false
                 isOffline = false
@@ -153,24 +158,25 @@ final class ChatStore {
         isOffline = false
         persistSoon()
 
-        let turns = conversation()
         let model = settings.model
         let apiKey = settings.apiKey
-        let sid = sessionID
         let streaming = settings.streaming
 
         replyTask = Task {
             do {
+                let systemPrompt = await LiveContext.shared.prompt()
+                guard !Task.isCancelled else { return }
+                let turns = conversation(systemPrompt: systemPrompt)
                 var got = false
                 if streaming {
-                    for try await delta in OpenCodeGo.stream(
-                        model: model, turns: turns, apiKey: apiKey, sessionID: sid) {
+                    for try await delta in OpenRouter.stream(
+                        model: model, turns: turns, apiKey: apiKey) {
                         got = true
                         append(delta, id: replyID)
                     }
                 } else {
-                    let reply = try await OpenCodeGo.complete(
-                        model: model, turns: turns, apiKey: apiKey, sessionID: sid)
+                    let reply = try await OpenRouter.complete(
+                        model: model, turns: turns, apiKey: apiKey)
                     got = true
                     append(reply, id: replyID)
                 }
@@ -225,7 +231,7 @@ final class ChatStore {
     func newChat() {
         // The old reply must not keep streaming or persist over the new chat.
         cancelReply()
-        sessionID = OpenCodeGo.newSessionID()
+        sessionID = OpenRouter.newSessionID()
         authFailed = false
         messages = [Message(
             author: .dino,
@@ -243,13 +249,13 @@ final class ChatStore {
 
     /// System prompt plus recent history. The in-flight placeholder is skipped
     /// via `isStreaming`, so this can be built after appending it.
-    private func conversation() -> [OpenCodeGo.Turn] {
-        var turns = [OpenCodeGo.Turn(role: "system", content: Personality.default)]
+    private func conversation(systemPrompt: String) -> [OpenRouter.Turn] {
+        var turns = [OpenRouter.Turn(role: "system", content: systemPrompt)]
         let history = messages
             .filter { !$0.isStreaming && !$0.isError && !$0.text.isEmpty }
             .suffix(Self.historyLimit)
         for message in history {
-            turns.append(OpenCodeGo.Turn(
+            turns.append(OpenRouter.Turn(
                 role: message.author == .user ? "user" : "assistant",
                 content: message.text))
         }
@@ -302,7 +308,7 @@ final class ChatStore {
     /// Timeout, no route to the server, or a server-side 5xx - the cases the
     /// header reports as "offline" rather than as a chat error.
     private static func isServerUnavailable(_ error: Error) -> Bool {
-        if let api = error as? OpenCodeGo.APIError, let status = api.status, status >= 500 {
+        if let api = error as? OpenRouter.APIError, let status = api.status, status >= 500 {
             return true
         }
         guard let url = error as? URLError else { return false }
@@ -319,14 +325,14 @@ final class ChatStore {
     /// The endpoint rejects a bad key with 401/403; trust the status because the
     /// message can mention "api key" on unrelated 4xx/5xx failures.
     private static func isAuthFailure(_ error: Error) -> Bool {
-        if let api = error as? OpenCodeGo.APIError, let status = api.status {
+        if let api = error as? OpenRouter.APIError, let status = api.status {
             return status == 401 || status == 403
         }
         return false
     }
 
     private static func describe(_ error: Error) -> String {
-        if let api = error as? OpenCodeGo.APIError { return api.message }
+        if let api = error as? OpenRouter.APIError { return api.message }
         if (error as? URLError) != nil {
             return "Não consegui falar com o servidor. Tá sem internet?"
         }

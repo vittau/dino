@@ -20,7 +20,8 @@ final class AppSettings {
     private init() {
         LegacyCleanup.runIfNeeded()
         apiKey = Secrets.apiKey
-        model = defaults.string(forKey: "model") ?? OpenCodeGo.defaultModel
+        let savedModel = defaults.string(forKey: "model")
+        model = savedModel?.contains("/") == true ? savedModel! : OpenRouter.defaultModel
         spriteScale = defaults.object(forKey: "spriteScale") as? Double ?? 1.0
         alwaysOnTop = defaults.object(forKey: "alwaysOnTop") as? Bool ?? true
         streaming = defaults.object(forKey: "streaming") as? Bool ?? true

@@ -1,7 +1,7 @@
 # AGENTS.md
 
 A native macOS desktop-pet app: a borderless floating panel with a pixel-art
-dino that chats over the OpenCode Go API. SwiftPM executable, no Xcode project,
+dino that chats over the OpenRouter API. SwiftPM executable, no Xcode project,
 no SwiftUI `App`/`Scene`, no test target. `README.md` (in Portuguese) documents
 the product; this file covers what an agent gets wrong.
 
@@ -36,7 +36,7 @@ Use the headless flags instead of guessing:
   The transcript also renders empty because of its `GeometryReader`/`ScrollView`.
   Those are not bugs. Check layout/balloon geometry with `--render`, and glass
   and text on screen.
-- `--selftest` spends a little of the user's OpenCode Go credits; don't loop it.
+- `--selftest` may spend the user's OpenRouter credits; don't loop it.
 - `DINO_DEBUG=1` logs window chrome geometry and hit-testing (`verifyChrome`).
 
 ## You cannot click this app
@@ -117,8 +117,9 @@ python3 tools/slice_sprites.py ~/Downloads/dino-breathing.png Resources/sprites 
   not Keychain: ad-hoc signing gives a new identity every rebuild, so Keychain
   would re-prompt each time. The app was once called DinoWidget;
   `LegacyCleanup.swift` removes those leftovers — don't reintroduce the name.
-- `OpenCodeGo.swift` must keep its custom `User-Agent` and the per-conversation
-  `x-opencode-session` header; the Go endpoint rejects requests without them.
+- `OpenRouter.swift` validates keys with `/api/v1/key`; `/models` can be public
+  and does not prove a key is valid. Keep the OpenRouter key separate from the
+  former OpenCode Go key in `secrets.json`.
 
 ## Editing UserDefaults
 

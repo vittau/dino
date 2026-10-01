@@ -1,14 +1,11 @@
 import Foundation
 
-/// Thin client for the OpenCode Go endpoint (OpenAI-compatible chat
-/// completions). Go asks every client to identify itself with its own user
-/// agent and to send a stable `x-opencode-session` per conversation so it can
-/// route and cache prompts sensibly.
-enum OpenCodeGo {
-    static let defaultModel = "deepseek-v4.1-flash"
-    static let userAgent = "dino-widget/0.1 (macOS)"
+/// Thin client for OpenRouter's OpenAI-compatible chat completions API.
+enum OpenRouter {
+    static let defaultModel = "openrouter/free"
+    static let userAgent = "dino/0.1 (macOS)"
 
-    private static let base = URL(string: "https://opencode.ai/zen/go/v1")!
+    private static let base = URL(string: "https://openrouter.ai/api/v1")!
 
     struct APIError: LocalizedError {
         let message: String
@@ -55,7 +52,7 @@ enum OpenCodeGo {
 
     // MARK: - request building
 
-    private static func request(path: String, apiKey: String, sessionID: String,
+    private static func request(path: String, apiKey: String,
                                 body: [String: Any]?,
                                 timeout: TimeInterval) throws -> URLRequest {
         var req = URLRequest(url: base.appendingPathComponent(path))
@@ -63,7 +60,8 @@ enum OpenCodeGo {
         req.httpMethod = body == nil ? "GET" : "POST"
         req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-        req.setValue(sessionID, forHTTPHeaderField: "x-opencode-session")
+        req.setValue("https://github.com/vittau/dino", forHTTPHeaderField: "HTTP-Referer")
+        req.setValue("Dino", forHTTPHeaderField: "X-Title")
         if let body {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -73,25 +71,31 @@ enum OpenCodeGo {
 
     private static func message(from data: Data, status: Int) -> String {
         if let err = try? JSONDecoder().decode(ErrorEnvelope.self, from: data) {
-            switch err.error.type {
-            case "MissingSessionID":
-                return "O servidor recusou a sessão. Tenta de novo~"
-            default:
-                return err.error.message
-            }
+            return err.error.message
         }
         if let text = String(data: data, encoding: .utf8), !text.isEmpty {
             return "Erro \(status): \(text.prefix(300))"
         }
-        return "Erro \(status) ao falar com o OpenCode Go."
+        return "Erro \(status) ao falar com o OpenRouter."
     }
 
-    // MARK: - models
+    // MARK: - key and models
+
+    /// /models can be public, so only /key actually validates a user's key.
+    static func validateKey(apiKey: String) async throws {
+        let req = try request(path: "key", apiKey: apiKey,
+                              body: nil, timeout: quickTimeout)
+        let (data, response) = try await session.data(for: req)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else {
+            throw APIError(message: message(from: data, status: status), status: status)
+        }
+    }
 
     /// The /models payload shape has changed before, so accept both the
     /// OpenAI-style envelope and a bare array of objects.
-    static func availableModels(apiKey: String, sessionID: String) async throws -> [String] {
-        let req = try request(path: "models", apiKey: apiKey, sessionID: sessionID,
+    static func availableModels(apiKey: String) async throws -> [String] {
+        let req = try request(path: "models", apiKey: apiKey,
                               body: nil, timeout: quickTimeout)
         let (data, response) = try await session.data(for: req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -109,13 +113,12 @@ enum OpenCodeGo {
     // MARK: - chat
 
     /// Streams reply deltas as they arrive.
-    static func stream(model: String, turns: [Turn], apiKey: String,
-                       sessionID: String) -> AsyncThrowingStream<String, Error> {
+    static func stream(model: String, turns: [Turn], apiKey: String) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
                     let req = try request(
-                        path: "chat/completions", apiKey: apiKey, sessionID: sessionID,
+                        path: "chat/completions", apiKey: apiKey,
                         body: [
                             "model": model,
                             "messages": turns.map { ["role": $0.role, "content": $0.content] },
@@ -134,8 +137,11 @@ enum OpenCodeGo {
                         let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
                         if payload.isEmpty { continue }
                         if payload == "[DONE]" { break }
-                        guard let data = payload.data(using: .utf8),
-                              let chunk = try? JSONDecoder().decode(StreamChunk.self, from: data)
+                        guard let data = payload.data(using: .utf8) else { continue }
+                        if let failure = try? JSONDecoder().decode(ErrorEnvelope.self, from: data) {
+                            throw APIError(message: failure.error.message)
+                        }
+                        guard let chunk = try? JSONDecoder().decode(StreamChunk.self, from: data)
                         else { continue }
                         if let text = chunk.choices.first?.delta.content, !text.isEmpty {
                             continuation.yield(text)
@@ -154,7 +160,7 @@ enum OpenCodeGo {
     /// server default applies) and by `--selftest`, which passes a small
     /// `maxTokens` to keep the check cheap.
     static func complete(model: String, turns: [Turn], apiKey: String,
-                         sessionID: String, maxTokens: Int? = nil) async throws -> String {
+                         maxTokens: Int? = nil) async throws -> String {
         var body: [String: Any] = [
             "model": model,
             "messages": turns.map { ["role": $0.role, "content": $0.content] },
@@ -162,7 +168,7 @@ enum OpenCodeGo {
         ]
         if let maxTokens { body["max_tokens"] = maxTokens }
         let req = try request(
-            path: "chat/completions", apiKey: apiKey, sessionID: sessionID,
+            path: "chat/completions", apiKey: apiKey,
             body: body,
             timeout: chatTimeout)
         let (data, response) = try await session.data(for: req)
@@ -178,7 +184,6 @@ enum OpenCodeGo {
 
     private struct ErrorEnvelope: Decodable {
         struct Inner: Decodable {
-            let type: String
             let message: String
         }
         let error: Inner

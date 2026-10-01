@@ -51,6 +51,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSApplicationCategoryType</key><string>public.app-category.entertainment</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSMicrophoneUsageDescription</key><string>Para você ditar suas mensagens para o Dino.</string>
+  <key>NSLocationUsageDescription</key><string>Para mostrar ao Dino o clima da sua região.</string>
+  <key>NSLocationWhenInUseUsageDescription</key><string>Para mostrar ao Dino o clima da sua região.</string>
   <key>NSHumanReadableCopyright</key><string>Um dinossaurinho fofo.</string>
 </dict>
 </plist>

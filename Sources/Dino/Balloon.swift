@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Rounded speech balloon with a soft tail. Same fill as the balloon, so
@@ -84,6 +85,26 @@ struct BalloonRow: View {
 
     private var isUser: Bool { message.author == .user }
 
+    private static let linkDetector = try? NSDataDetector(
+        types: NSTextCheckingResult.CheckingType.link.rawValue)
+
+    /// Detect links without parsing Markdown, preserving the message's line
+    /// breaks and literal text even while a reply is streaming.
+    private var linkedText: AttributedString {
+        var attributed = AttributedString(message.text)
+        let matches = Self.linkDetector?.matches(
+            in: message.text, range: NSRange(message.text.startIndex..., in: message.text)) ?? []
+        for match in matches {
+            guard let range = Range(match.range, in: message.text), let url = match.url else { continue }
+            let lower = attributed.characters.index(attributed.startIndex,
+                offsetBy: message.text.distance(from: message.text.startIndex, to: range.lowerBound))
+            let upper = attributed.characters.index(attributed.startIndex,
+                offsetBy: message.text.distance(from: message.text.startIndex, to: range.upperBound))
+            attributed[lower..<upper].link = url
+        }
+        return attributed
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             if isUser { Spacer(minLength: 34) }
@@ -100,8 +121,10 @@ struct BalloonRow: View {
         Group {
             if message.isStreaming && message.text.isEmpty {
                 TypingDots()
+            } else if !RenderMode.offscreen && linkedText.runs.contains(where: { $0.link != nil }) {
+                LinkedBalloonText(text: linkedText, color: isUser ? .white : NSColor(Palette.ink))
             } else {
-                Text(message.text)
+                Text(linkedText)
                     .textSelection(.enabled)
                     .font(.system(size: 13.5, weight: .regular, design: .rounded))
                     .foregroundStyle(isUser ? .white : Palette.ink)
@@ -125,6 +148,122 @@ struct BalloonRow: View {
                 BalloonShape(tail: isUser ? .trailing : .leading)
                     .stroke(Palette.blush.opacity(0.85), lineWidth: 1.5)
             }
+        }
+    }
+}
+
+/// TextKit provides native URL opening, selection and cursor rectangles for
+/// wrapped links, which SwiftUI Text does not consistently expose on macOS.
+private struct LinkedBalloonText: NSViewRepresentable {
+    let text: AttributedString
+    let color: NSColor
+
+    func makeNSView(context: Context) -> LinkTextView {
+        let view = LinkTextView()
+        view.isEditable = false
+        view.isSelectable = true
+        view.drawsBackground = false
+        view.textContainerInset = .zero
+        view.textContainer?.lineFragmentPadding = 0
+        view.textContainer?.widthTracksTextView = false
+        view.isHorizontallyResizable = false
+        view.isVerticallyResizable = false
+        view.linkTextAttributes = [
+            .foregroundColor: NSColor.linkColor,
+            .underlineStyle: NSUnderlineStyle.single.rawValue
+        ]
+        return view
+    }
+
+    func updateNSView(_ view: LinkTextView, context: Context) {
+        let content = NSMutableAttributedString(attributedString: NSAttributedString(text))
+        let baseFont = NSFont.systemFont(ofSize: 13.5)
+        let font = baseFont.fontDescriptor.withDesign(.rounded)
+            .flatMap { NSFont(descriptor: $0, size: 13.5) } ?? baseFont
+        content.addAttributes([.font: font, .foregroundColor: color],
+                              range: NSRange(location: 0, length: content.length))
+        if view.attributedString() != content {
+            view.textStorage?.setAttributedString(content)
+            view.window?.invalidateCursorRects(for: view)
+        }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView view: LinkTextView,
+                      context: Context) -> CGSize? {
+        guard let container = view.textContainer, let layout = view.layoutManager else { return nil }
+        let width = max(1, proposal.width ?? Metrics.content.width)
+        container.containerSize = CGSize(width: width, height: .greatestFiniteMagnitude)
+        layout.ensureLayout(for: container)
+        let used = layout.usedRect(for: container)
+        return CGSize(width: min(width, ceil(used.maxX)), height: ceil(used.maxY))
+    }
+
+    final class LinkTextView: NSTextView {
+        private var hoverArea: NSTrackingArea?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            window?.acceptsMouseMovedEvents = true
+        }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            if let hoverArea { removeTrackingArea(hoverArea) }
+            // The pet is normally a nonactivating panel. Key-window-only
+            // tracking misses hover events until the user focuses its input.
+            let area = NSTrackingArea(rect: .zero,
+                options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                owner: self)
+            addTrackingArea(area)
+            hoverArea = area
+        }
+
+        override func mouseMoved(with event: NSEvent) {
+            super.mouseMoved(with: event)
+            updateCursor(with: event)
+        }
+
+        override func mouseEntered(with event: NSEvent) {
+            super.mouseEntered(with: event)
+            updateCursor(with: event)
+        }
+
+        override func cursorUpdate(with event: NSEvent) {
+            updateCursor(with: event)
+        }
+
+        override func mouseExited(with event: NSEvent) {
+            super.mouseExited(with: event)
+            NSCursor.arrow.set()
+        }
+
+        private func updateCursor(with event: NSEvent) {
+            let point = convert(event.locationInWindow, from: nil)
+            (linkRects.contains { $0.contains(point) } ? NSCursor.pointingHand : .iBeam).set()
+        }
+
+        var linkRects: [NSRect] {
+            guard let storage = textStorage, let layout = layoutManager,
+                  let container = textContainer else { return [] }
+            layout.ensureLayout(for: container)
+            var rects: [NSRect] = []
+            storage.enumerateAttribute(.link, in: NSRange(location: 0, length: storage.length)) {
+                value, range, _ in
+                guard value != nil else { return }
+                let glyphs = layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                layout.enumerateEnclosingRects(forGlyphRange: glyphs,
+                    withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
+                    in: container) { rect, _ in
+                        rects.append(rect.offsetBy(dx: self.textContainerOrigin.x,
+                                                  dy: self.textContainerOrigin.y))
+                    }
+            }
+            return rects
+        }
+
+        override func resetCursorRects() {
+            super.resetCursorRects()
+            for rect in linkRects { addCursorRect(rect, cursor: .pointingHand) }
         }
     }
 }

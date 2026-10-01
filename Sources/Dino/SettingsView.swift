@@ -22,7 +22,7 @@ struct SettingsView: View {
     private var connection: some View {
         Section {
             HStack(spacing: 8) {
-                SecureField("Cole sua API key do OpenCode Go", text: $keyDraft)
+                SecureField("Cole sua API key do OpenRouter", text: $keyDraft)
                     .textFieldStyle(.roundedBorder)
                 Button("Salvar", action: saveKey)
                     .disabled(keyDraft.trimmingCharacters(in: .whitespaces).isEmpty
@@ -119,9 +119,8 @@ struct SettingsView: View {
         busy = true
         defer { busy = false }
         do {
-            let available = try await OpenCodeGo.availableModels(
-                apiKey: settings.apiKey, sessionID: OpenCodeGo.newSessionID())
-            note = "Chave válida — \(available.count) modelos disponíveis."
+            try await OpenRouter.validateKey(apiKey: settings.apiKey)
+            note = "Chave do OpenRouter válida."
         } catch {
             note = "Falhou: \(error.localizedDescription)"
         }
@@ -131,12 +130,9 @@ struct SettingsView: View {
         busy = true
         defer { busy = false }
         do {
-            let available = try await OpenCodeGo.availableModels(
-                apiKey: settings.apiKey, sessionID: OpenCodeGo.newSessionID())
-            models = available
-            if !available.isEmpty, !available.contains(settings.model) {
-                settings.model = available[0]
-            }
+            try await OpenRouter.validateKey(apiKey: settings.apiKey)
+            let available = try await OpenRouter.availableModels(apiKey: settings.apiKey)
+            models = Array(Set(available + [settings.model])).sorted()
         } catch {
             note = "Não consegui listar os modelos: \(error.localizedDescription)"
         }
