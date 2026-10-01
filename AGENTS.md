@@ -92,9 +92,11 @@ python3 tools/slice_sprites.py ~/Downloads/dino-breathing.png Resources/sprites 
   3-frame sheet can be the same width). Frames are re-anchored on the **feet**
   because ChatGPT drifts each frame sideways; verify anchoring by checking every
   frame's lowest ink row is identical.
-- `blink.png` is generated too (largest compact dark blob in the head = the eye,
-  covered with skin colour plus a painted lid). It is drawn only during the
-  empty-lung pause, where the pose is still and the overlay lines up.
+- `blink_half.png` and `blink.png` are generated from the final idle frame
+  (largest compact dark blob in the head = the eye). They are complete frames,
+  not overlays: their face pixels preserve the surrounding colour and alpha.
+  They are shown only during the empty-lung pause. When the source sheet is
+  unavailable, regenerate them with `python3 tools/slice_sprites.py --blink-only`.
 - **Never cross-fade the frames.** They are independent drawings, so blending
   ghosts. Swap them dry, as pixel art expects.
 - Don't drive the breath with `scaleEffect`/`offset`: the frames already inflate

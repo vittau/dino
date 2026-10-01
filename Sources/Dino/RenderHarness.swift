@@ -43,8 +43,9 @@ enum RenderHarness {
         render(gallery.padding(20), to: "\(directory)/balloons.png")
 
         render(breathStrip.padding(16), to: "\(directory)/breath.png")
+        render(blinkStrip.padding(16), to: "\(directory)/blink.png")
 
-        print("render: wrote \(sizes.count + 2) files into \(directory)")
+        print("render: wrote \(sizes.count + 3) files into \(directory)")
         exit(0)
     }
 
@@ -54,6 +55,16 @@ enum RenderHarness {
             ForEach(Array(Sprites.idle.indices), id: \.self) { index in
                 DinoFrames(frame: index)
                     .frame(width: 118, height: 118)
+            }
+        }
+        .background(Color.white)
+    }
+
+    private static var blinkStrip: some View {
+        HStack(spacing: 0) {
+            ForEach(0..<3, id: \.self) { phase in
+                DinoFrames(frame: Sprites.idle.count - 1, blinkPhase: phase)
+                    .frame(width: 124, height: 124)
             }
         }
         .background(Color.white)

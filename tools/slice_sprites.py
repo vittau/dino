@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Turn a horizontal sprite sheet from ChatGPT into DinoWidget's sprites.
+"""Turn a horizontal sprite sheet into Dino's sprites.
 
 ChatGPT hands back one wide PNG with the frames side by side. This does three
 things:
@@ -10,9 +10,7 @@ things:
   2. Re-anchors every frame into one square canvas, aligned on the feet
      (bottom edge + centroid of the legs), which removes the sideways drift
      that would otherwise make the dino slide while breathing.
-  3. Paints blink.png: the eye from the artwork, closed. It is an overlay, so
-     it is transparent everywhere except the eyelid, and the app draws it on
-     top of the resting pose so the body holds still while the eyes close.
+  3. Paints two pixel-art eyelid frames from the resting pose.
 
 The frames come out in sheet order and are left that way, because the sheet is
 one whole breath: the first and last frames are the same resting pose and the
@@ -22,14 +20,16 @@ regenerated sheet with a different pose still works without editing constants.
 
     python3 tools/slice_sprites.py ~/Downloads/dino.png Resources/sprites
     python3 tools/slice_sprites.py sheet.png out/ --preview
+    python3 tools/slice_sprites.py --blink-only --preview
 
-Options: --frames N to force the count, --preview to also write a composite
-showing the blink applied, --report for per-frame measurements.
+Options: --frames N forces the count; --blink-only rebuilds the eyelids from
+the installed idle frames when the original sheet is unavailable. --preview
+writes the open/half/closed composite; --report prints frame measurements.
 """
 
 import argparse
 import collections
-import math
+import glob
 import os
 import sys
 
@@ -169,83 +169,105 @@ def dominant(img, box, predicate):
     return c.most_common(1)[0][0] if c else None
 
 
-def put_over(img, x, y, color, t):
-    """Composite color at coverage t over the pixel already there."""
-    if t <= 0 or not (0 <= x < img.w and 0 <= y < img.h):
-        return
-    i = (y * img.w + x) * 4
-    da = img.px[i + 3] / 255.0
-    oa = t + da * (1.0 - t)
-    if oa <= 0:
-        return
-    for c in range(3):
-        img.px[i + c] = int(min(255, (color[c] * t
-                                      + img.px[i + c] * da * (1.0 - t)) / oa + 0.5))
-    img.px[i + 3] = int(oa * 255 + 0.5)
+def build_blink(resting, eye, skin, ink, closed):
+    """Repair the eye with neighboring face pixels and draw a stepped eyelid.
 
-
-def build_blink(size, eye, skin, ink, lid_drop=0.34, thickness=14, pad=7):
-    """Transparent overlay: skin patch over the open eye, then a closed lid.
-
-    The patch is opaque on purpose - it has to hide the open eye of whatever
-    idle frame is showing underneath - so the lid is composited over it rather
-    than replacing it, or the patch would get punched through.
+    A complete frame keeps the face's original alpha and gradient; an overlay
+    would make the repaired area more opaque than the surrounding pixels.
     """
     cx, cy, rx, ry = eye
-    out = pngtool.Image(size, size)
+    out = pngtool.Image(resting.w, resting.h, bytearray(resting.px))
+    left, right = int(cx - rx - 12), int(cx + rx + 12)
+    top, bottom = int(cy - ry - 12), int(cy + ry + 12)
+    lid_y = int(cy + (9 if closed else -8))
 
-    prx, pry = rx + pad, ry + pad
-    for y in range(int(cy - pry - 3), int(cy + pry + 4)):
-        for x in range(int(cx - prx - 3), int(cx + prx + 4)):
-            d = dist_px(x + 0.5, y + 0.5, cx, cy, prx, pry)
-            if d > 0:
-                continue
-            a = min(1.0, -d / 1.5)          # feather the last 1.5px inside
-            out.put(x, y, (skin[0], skin[1], skin[2], int(a * 255)))
+    def face_sample(x, y):
+        r, g, b, a = resting.at(x, y)
+        return (r, g, b, a) if a > SOLID else (*skin, 255)
 
-    # closed lid: shallow arch with rounded, tapering ends
-    span = rx - 3
-    for x in range(int(cx - span), int(cx + span) + 1):
-        u = (x - cx) / span
-        yc = cy - (ry * lid_drop) * (1.0 - u * u)
-        half = max(1.0, thickness * 0.5 * (1.0 - 0.35 * abs(u) ** 3))
-        for y in range(int(yc - half) - 1, int(yc + half) + 2):
-            cov = 1.0 - min(1.0, abs(y + 0.5 - yc) / half)
-            put_over(out, x, y, ink, cov)
-    return out
-
-
-def dist_px(x, y, cx, cy, rx, ry):
-    """Approximate pixel distance from the ellipse boundary (negative inside)."""
-    dx = (x - cx) / rx
-    dy = (y - cy) / ry
-    return (math.sqrt(dx * dx + dy * dy) - 1.0) * min(rx, ry)
-
-
-def over(base, top):
-    """Composite top over base, straight alpha."""
-    out = pngtool.Image(base.w, base.h)
-    for i in range(0, len(base.px), 4):
-        ba = base.px[i + 3] / 255.0
-        ta = top.px[i + 3] / 255.0
-        oa = ta + ba * (1 - ta)
-        if oa <= 0:
+    for y in range(top, bottom + 1):
+        if not 0 <= y < resting.h:
             continue
-        for c in range(3):
-            out.px[i + c] = int(min(255, (top.px[i + c] * ta
-                                          + base.px[i + c] * ba * (1 - ta)) / oa + 0.5))
-        out.px[i + 3] = int(oa * 255 + 0.5)
+        # Half shut: the lower half of the original eye remains visible.
+        if not closed and y > lid_y + 5:
+            continue
+        lc = face_sample(left - 1, y)
+        rc = face_sample(right + 1, y)
+        for x in range(left, right + 1):
+            original = resting.at(x, y)
+            if y > cy + 25 and x < cx - 5 and original[0] > 170 \
+                    and original[0] > original[1] * 1.1 \
+                    and 80 < original[1] < 200 and original[2] > 100:
+                continue
+            mix = (x - left) / (right - left)
+            color = tuple(round(lc[k] * (1 - mix) + rc[k] * mix) for k in range(4))
+            out.put(x, y, color)
+
+    # Six source pixels per step, with a slight downward curve at the ends.
+    block = 6
+    for x0 in range(left + block, right - block, block):
+        u = abs((x0 + block / 2 - cx) / rx)
+        y0 = lid_y + round(9 * u * u / block) * block
+        thickness = block if u > 0.82 else block + 2
+        for y in range(y0, y0 + thickness):
+            for x in range(x0, min(x0 + block, right)):
+                out.put(x, y, (*ink, resting.at(x, y)[3]))
     return out
+
+
+def write_blinks(canvas, outdir, report=False, preview=False):
+    bb = solid_bbox(canvas)
+    eye = find_eye(canvas, bb)
+    if eye is None:
+        sys.exit("no eye found in resting frame")
+    ink = dominant(canvas, (int(eye[0] - eye[2]) - 8, int(eye[1] - eye[3]) - 8,
+                            int(eye[0] + eye[2]) + 8, int(eye[1] + eye[3]) + 8),
+                   lambda p: sum(p) < DARK_SUM) or (50, 22, 25)
+    skin = dominant(canvas, (int(eye[0] - eye[2]) - 24, int(eye[1] - eye[3]) - 24,
+                             int(eye[0] + eye[2]) + 24, int(eye[1] + eye[3]) + 24),
+                    lambda p: sum(p) > 430 and p[1] > p[0]) or (122, 210, 144)
+    if report:
+        print(f"eye: centre=({eye[0]:.0f},{eye[1]:.0f}) r=({eye[2]:.0f},{eye[3]:.0f})"
+              f" ink={ink} skin={skin}")
+    blink = build_blink(canvas, eye, skin, ink, closed=True)
+    half = build_blink(canvas, eye, skin, ink, closed=False)
+    os.makedirs(outdir, exist_ok=True)
+    for name, image in (("blink.png", blink), ("blink_half.png", half)):
+        path = os.path.join(outdir, name)
+        pngtool.write(path, image)
+        print("wrote", path, f"{canvas.w}x{canvas.h}")
+    if preview:
+        side = pngtool.Image(canvas.w * 3 + 40, canvas.h)
+        for index, view in enumerate((canvas, half, blink)):
+            x0 = index * (canvas.w + 20)
+            for y in range(canvas.h):
+                for x in range(canvas.w):
+                    side.put(x0 + x, y, view.at(x, y))
+        pngtool.write("/tmp/blink_preview.png", side)
+        print("wrote /tmp/blink_preview.png (open, half, closed)")
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("sheet")
+    ap.add_argument("sheet", nargs="?")
     ap.add_argument("outdir", nargs="?", default="Resources/sprites")
     ap.add_argument("--frames", type=int, default=None)
     ap.add_argument("--preview", action="store_true")
     ap.add_argument("--report", action="store_true")
+    ap.add_argument("--blink-only", action="store_true",
+                    help="regenerate blinks from the existing final idle frame")
     args = ap.parse_args()
+
+    if args.blink_only:
+        paths = glob.glob(os.path.join(args.outdir, "idle_*.png"))
+        if not paths:
+            ap.error("no idle frames found for --blink-only")
+        last = max(paths, key=lambda p: int(os.path.basename(p)[5:-4]))
+        existing = pngtool.read(last)
+        write_blinks(existing, args.outdir, args.report, args.preview)
+        return
+    if not args.sheet:
+        ap.error("a sprite sheet is required unless --blink-only is used")
 
     sheet = pngtool.read(args.sheet)
     if args.frames:
@@ -295,41 +317,7 @@ def main():
                   f"offset=({off_x},{off_y})")
         print("wrote", path, f"{size}x{size}")
 
-    # blink overlay, built in the first frame's canvas space
-    canvas, off_x, off_y = placed[0]
-    f, bb, _ = frames[0]
-    eye = find_eye(f, bb)
-    if eye is None:
-        print("warning: no eye found, skipping blink.png")
-        return
-    ink = dominant(f, (int(eye[0] - eye[2]) - 8, int(eye[1] - eye[3]) - 8,
-                       int(eye[0] + eye[2]) + 8, int(eye[1] + eye[3]) + 8),
-                   lambda p: sum(p) < DARK_SUM) or (50, 22, 25)
-    skin = dominant(f, (int(eye[0] - eye[2]) - 24, int(eye[1] - eye[3]) - 24,
-                        int(eye[0] + eye[2]) + 24, int(eye[1] + eye[3]) + 24),
-                    lambda p: sum(p) > 430 and p[1] > p[0]) or (122, 210, 144)
-    if args.report:
-        print(f"eye: centre=({eye[0]:.0f},{eye[1]:.0f}) r=({eye[2]:.0f},{eye[3]:.0f})"
-              f" ink={ink} skin={skin}")
-    eye_canvas = (eye[0] + off_x, eye[1] + off_y, eye[2], eye[3])
-    blink = build_blink(size, eye_canvas, skin, ink)
-    blink_path = os.path.join(args.outdir, "blink.png")
-    pngtool.write(blink_path, blink)
-    print("wrote", blink_path, f"{size}x{size}")
-
-    if args.preview:
-        side = pngtool.Image(size * 2 + 20, size)
-        for y in range(size):
-            for x in range(size):
-                j = (y * size + x) * 4
-                side.put(x, y, canvas.px[j:j + 4])
-        combined = over(canvas, blink)
-        for y in range(size):
-            for x in range(size):
-                j = (y * size + x) * 4
-                side.put(x + size + 20, y, combined.px[j:j + 4])
-        pngtool.write("/tmp/blink_preview.png", side)
-        print("wrote /tmp/blink_preview.png (left: idle, right: with blink)")
+    write_blinks(placed[-1][0], args.outdir, args.report, args.preview)
 
 
 if __name__ == "__main__":

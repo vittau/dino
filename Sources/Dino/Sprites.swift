@@ -7,6 +7,7 @@ import AppKit
 enum Sprites {
     static let idle: [NSImage] = (1...8).compactMap { load("idle_\($0)") }
     static let blink: NSImage? = load("blink")
+    static let blinkHalf: NSImage? = load("blink_half")
 
     static var isAvailable: Bool { !idle.isEmpty }
 

@@ -1,25 +1,20 @@
 import AppKit
 import SwiftUI
 
-/// The dino's pose: one breathing frame, plus the blink overlay when the eyes
-/// are shut.
+/// The dino's pose: one breathing frame or a resting frame with an eyelid.
 ///
 /// Frames are swapped outright rather than cross-faded. Blending them produced
 /// a ghosted double image - the frames are independent drawings, so the
 /// silhouettes never sit exactly on top of each other.
 struct DinoFrames: View {
     var frame: Int
-    var blinking = false
+    var blinkPhase = 0
 
     var body: some View {
-        ZStack {
-            sprite(Sprites.idle.indices.contains(frame)
-                   ? Sprites.idle[frame]
-                   : Sprites.idle.first)
-            if blinking {
-                sprite(Sprites.blink)
-            }
-        }
+        sprite(blinkPhase == 2 ? (Sprites.blink ?? Sprites.idle.last)
+               : blinkPhase == 1 ? (Sprites.blinkHalf ?? Sprites.idle.last)
+               : Sprites.idle.indices.contains(frame)
+                   ? Sprites.idle[frame] : Sprites.idle.first)
     }
 
     @ViewBuilder
@@ -39,19 +34,18 @@ struct DinoSprite: View {
     var isThinking = false
 
     @State private var frame = 0
-    @State private var blinking = false
+    @State private var blinkPhase = 0
 
-    private static let holdFull = 0.5
-    private static let holdEmpty = 2.0
-    /// Dwell on a mid-breath frame: brisk through the middle, settled at the ends.
-    private static let stepFast = 0.35
-    private static let stepSlow = 0.45
-    private static let blinkLength = 0.13
+    private static let holdFull = 0.32
+    private static let holdEmpty = 1.25
+    /// Shorter, even frame steps keep the five-drawing breath from stalling.
+    private static let stepFast = 0.27
+    private static let stepSlow = 0.33
 
     private var side: CGFloat { 124 * scale }
 
     var body: some View {
-        DinoFrames(frame: frame, blinking: blinking)
+        DinoFrames(frame: frame, blinkPhase: blinkPhase)
             .frame(width: side, height: side)
             // No extra lift or scale on top of the frames. The artwork already
             // inflates from planted feet (every frame's feet land on the same
@@ -80,8 +74,8 @@ struct DinoSprite: View {
             steps.append((index, index == 0 ? Self.stepSlow : Self.stepFast))
         }
         steps.append((peak, Self.holdFull))                 // lungs full
-        for index in (peak + 1)..<count {
-            steps.append((index, index == count - 1 ? Self.stepSlow : Self.stepFast))
+        for index in (peak + 1)..<(count - 1) {
+            steps.append((index, Self.stepFast))
         }
         steps.append((count - 1, Self.holdEmpty))           // lungs empty
         return steps
@@ -101,14 +95,14 @@ struct DinoSprite: View {
     }
 
     /// The long empty-lung pause. Blinks only happen here: the pose is still,
-    /// so the eyelid overlay lines up with the eye underneath it.
+    /// so the eyelid frames line up with the body underneath them.
     private func restEmpty(for seconds: Double) async -> Bool {
         var remaining = seconds
-        let step = 0.6
+        let step = 0.5
         while remaining > 0 {
             guard await pause(min(step, remaining)) else { return false }
             remaining -= step
-            if Double.random(in: 0..<1) < 0.4 {
+            if Double.random(in: 0..<1) < 0.32 {
                 await blink()
             }
         }
@@ -116,9 +110,13 @@ struct DinoSprite: View {
     }
 
     private func blink() async {
-        blinking = true
-        _ = await pause(Self.blinkLength)
-        blinking = false
+        blinkPhase = 1
+        guard await pause(0.07) else { return }
+        blinkPhase = 2
+        guard await pause(0.12) else { return }
+        blinkPhase = 1
+        guard await pause(0.07) else { return }
+        blinkPhase = 0
     }
 
     private func pause(_ seconds: Double) async -> Bool {
